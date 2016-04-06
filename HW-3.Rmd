@@ -1,6 +1,6 @@
 ---
 title: "MATH 216 Homework 3"
-author: "WRITE YOUR NAME HERE"
+author: "Alison Cook"
 output: html_document
 ---
 
@@ -9,6 +9,8 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(lubridate))
 suppressPackageStartupMessages(library(Quandl))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(knitr))
 ```
 
 
@@ -16,10 +18,10 @@ suppressPackageStartupMessages(library(Quandl))
 
 Please indicate
 
-* Who you collaborated with:
-* Roughly how much time you spent on this HW:
-* What gave you the most trouble:
-* Any comments you have: 
+* Who you collaborated with: Jacob Dixon, Carter Merenstein
+* Roughly how much time you spent on this HW: 8 Hours so far :(
+* What gave you the most trouble: Interpreting questions, trying to get data in the right format, solving tiny problems and misconceptions. 
+* Any comments you have: This is my first pass and obviously needs work/needs to be cleaned up
 
 
 ## Data
@@ -35,6 +37,8 @@ profiles <- read.csv("data/profiles.csv", header=TRUE) %>%
   tbl_df()
 jukebox <- read.csv("data/jukebox.csv", header=TRUE) %>% 
   tbl_df()
+bitcoin <- Quandl("BAVERAGE/USD") %>% tbl_df()
+gold <- Quandl("WGC/GOLD_DAILY_USD") %>% tbl_df()
 ```
 
 
@@ -49,11 +53,41 @@ specifically the OkCupid dataset.
 
 ### a)
 
-Using your exploratory data analysis from HW-2, fit a logistic regression to
-predict individual's gender and interpret your results.
+Using your exploratory data analysis from HW-2, fit a logistic regression to predict individual's gender and interpret the results for one continuous variable (if you used one) and one categorical variable of your choice.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+essays <- select(profiles, contains("essay"))
+profiles <- select(profiles, -contains("essay"))
+profiles <- mutate(profiles, is_female = ifelse(sex=="f", 1, 0))
 
+##from previous assignment
+
+#height and makeup!
+profiles <- mutate(profiles, num_height = as.numeric(as.character(height)))
+
+ggplot(data=profiles, aes(x=num_height, y=is_female)) +
+  geom_jitter(height=0.2, alpha = 0.1) +
+  xlim(c(50, 80)) + 
+  labs(title = "Range of Heights on Bay Area OKCupid Profiles", x = "Age", y = "Is Female")
+
+find.query <- function(char.vector, query){
+  which.has.query <- grep(query, char.vector, ignore.case = TRUE)
+  length(which.has.query) != 0
+}
+profile.has.query <- function(data.frame, query){
+  query <- tolower(query)
+  has.query <- apply(data.frame, 1, find.query, query=query)
+  return(has.query)
+}
+
+profiles$has_makeup <- profile.has.query(data.frame = essays, query = "makeup")
+group_by(profiles, has_makeup) %>% 
+  summarise(prop_female=mean(is_female)) %>% kable(.)
+
+#fit model
+model_1 <- glm(is_female ~ has_makeup + num_height, data=profiles, family=binomial)
+l <- summary(model_1)
+kable(l$coef, digits = 3)
 ```
 
 
@@ -63,6 +97,15 @@ Plot a histogram of the fitted probabilities $\widehat{p}_i$ for all users $i=1,
 \ldots, n=59946$ in your dataset.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+p_hat <- fitted(model_1)
+
+ggplot(data = NULL, aes(x = p_hat)) +
+  geom_histogram(binwidth = 0.2, col="blue", 
+                 fill="blue", 
+                 alpha = .2) +
+  geom_vline(xintercept = 0.5, col = "red") +
+  labs(title = "Histogram of Fitted Probabilities", x = "P hat", 
+       y = "Count of OK Cupid Users")
 
 ```
 
@@ -110,7 +153,41 @@ mean anything to most people).
 What seasonal (i.e. cyclical) patterns do you observe?
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+jukebox <- jukebox %>% mutate(Date_format = parse_date_time(date_time, "%b %d %H%M%S %y"))
+jukebox <- jukebox %>% separate(Date_format, c("Date", "Time"), sep = " ")
+jukebox <- jukebox %>% mutate(week = week(Date))
+jukebox <- jukebox %>% mutate(year = year(Date))
+songs_per_week <- jukebox  %>% group_by(year, week)  %>% tally() 
+songs_per_week$date <- as.Date(paste(songs_per_week$year, 
+                                     songs_per_week$week, 1, sep="-"), "%Y-%U-%u")
 
+ggplot(data = songs_per_week, aes(x = date, y = n)) +
+  geom_point() +
+  labs(title = "Songs Played Per Week", x = "Date",
+       y = "Number of Songs")
+
+#seasonal patterns?
+songs_per_week <- songs_per_week %>% mutate(month = month(date)) %>% select(month, n)
+
+#tell R which months are in which seasons
+winter <- c(12, 1, 2)
+spring <- c(3, 4, 5)
+summer <- c(6, 7, 8)
+autumn <- c(9, 10, 11)
+
+songs_by_season <- songs_per_week %>% 
+  mutate(season = ifelse(month %in% winter, 'winter', 
+                         ifelse(month %in% spring, 'spring', 
+                                ifelse(month %in% summer, 'summer', 
+                                       ifelse(month %in% autumn, 'autumn', NA)))))
+
+
+ggplot(data = songs_by_season, aes(x = season, y = n)) +
+  geom_boxplot() +
+  labs(title = "Songs Played by Season", x= "Season",
+       y = "Number of Songs")
+
+#highly variable in winter due to break?
 ```
 
 
@@ -126,7 +203,18 @@ shift" during the academic year? Define
 * the academic year as September through May (inclusive)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+jukebox <- jukebox %>% mutate(month = month(Date))
 
+academic <- c(9, 10, 11, 12, 1, 2, 3, 4, 5)
+
+academic_songs <- jukebox %>% 
+  mutate(academic = ifelse(month %in% academic, 'academic', 'break')) %>% 
+  filter(academic == "academic")
+
+academic_songs <- academic_songs %>% filter(Time > "00:00:00", Time < "08:00:00")
+
+academic_songs %>% group_by(artist) %>% 
+  tally() %>% arrange(desc(n)) %>% slice(1:10) %>% kable()
 ```
 
 
@@ -145,7 +233,31 @@ Let the reference currency be US dollars. Analyze these results and provide
 insight to a foreign currency exchanger.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+bitcoin <- rename(bitcoin, Avg = `24h Average`, Total.Volume = `Total Volume`)
 
+currency <- left_join(bitcoin, gold, by = "Date")
+
+##make this prettier
+ggplot(data = currency, aes(x = Date)) +
+  geom_line(aes(x = Date, y = Avg), colour = "blue") +
+  geom_line(aes(x = Date, y = Value), colour = "green") +
+  labs(title = "Variation in Average Currency Prices", x = "Date",
+       y = "Average Price for Day (USD)")
+
+bitcoin_diff <- diff(currency$Avg)
+gold_diff <- diff(currency$Value)
+
+ggplot(data = NULL, aes(x = bitcoin_diff)) +
+  geom_histogram() +
+  xlim(-200,200) +
+  labs(title = "Daily Variation in Bitcoin Prices", x = "Daily Difference in Price of Gold",
+       y = "Frequency")
+
+ggplot(data = NULL, aes(x = gold_diff)) +
+  geom_histogram() +
+  xlim(-200,200)+
+  labs(title = "Daily Variation in Gold Prices", x = "Daily Difference in Price of Gold",
+       y = "Frequency")
 ```
 
 
