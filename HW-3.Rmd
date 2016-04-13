@@ -127,38 +127,25 @@ predicted sex to the actual sex of all users. The sum of all the elements in
 your table should be $n=59946$. Comment on how well our predictions fared.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-fit_pred <- c()
-
-for(i in 1:59943) {
-  if(!is.na(p_hat [i])){
-    if(p_hat[i] >= 0.5) {
-      fit_pred[i] <- 1
-    }
-    if(p_hat[i] < 0.5) {
-      fit_pred[i] <- 0
-    }
-  }else{
-    fit_pred[i] <- NA
-  }
-}
+fit_pred <- ifelse(p_hat >= 0.5, 1, 0)
 
 profiles$pred_female <- fit_pred
 
 obs <- profiles  %>% group_by(is_female)  %>% tally()
 pred <- profiles  %>% group_by(pred_female)  %>% tally()
 
-contingency <- matrix(nrow = 4, ncol = 2)
+contingency <- matrix(nrow = 2, ncol = 2)
 colnames(contingency) <- c("Actual", "Predicted")
-rownames(contingency) <- c("Male", "Female", "Unknown", "Sum")
+rownames(contingency) <- c("Male", "Female")
 
 contingency[1,1] <- obs[1,2][[1]]
 contingency[2,1] <- obs[2,2][[1]]
-contingency[4,1] <- contingency[1,1] + contingency[2,1]
+#contingency[4,1] <- contingency[1,1] + contingency[2,1]
 
 contingency[1,2] <- pred[1,2][[1]]
 contingency[2,2] <- pred[2,2][[1]]
-contingency[3,2] <- pred[3,2][[1]]
-contingency[4,2] <- contingency[1,2] + contingency[2,2] + contingency[3,2]
+#contingency[3,2] <- pred[3,2][[1]]
+#contingency[4,2] <- contingency[1,2] + contingency[2,2] + contingency[3,2]
 
 kable(as.data.frame(contingency))
 ```
