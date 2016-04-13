@@ -18,10 +18,11 @@ suppressPackageStartupMessages(library(knitr))
 
 Please indicate
 
-* Who you collaborated with: Jacob Dixon, Carter Merenstein
-* Roughly how much time you spent on this HW: 8 Hours so far :(
+* Who you collaborated with: Jacob Dixon, Carter Merenstein, Andrew Holtz
+* Roughly how much time you spent on this HW: 13 Hours
+I have now spent over 45 minutes just trying to get this to knit
 * What gave you the most trouble: Interpreting questions, trying to get data in the right format, solving tiny problems and misconceptions. 
-* Any comments you have: This is my first pass and obviously needs work/needs to be cleaned up
+* Any comments you have: Even though this was pared down, it was still a lot of troubleshooting!
 
 
 ## Data
@@ -37,8 +38,6 @@ profiles <- read.csv("data/profiles.csv", header=TRUE) %>%
   tbl_df()
 jukebox <- read.csv("data/jukebox.csv", header=TRUE) %>% 
   tbl_df()
-bitcoin <- Quandl("BAVERAGE/USD") %>% tbl_df()
-gold <- Quandl("WGC/GOLD_DAILY_USD") %>% tbl_df()
 ```
 
 
@@ -56,6 +55,7 @@ specifically the OkCupid dataset.
 Using your exploratory data analysis from HW-2, fit a logistic regression to predict individual's gender and interpret the results for one continuous variable (if you used one) and one categorical variable of your choice.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+profiles <- filter(profiles, sex != "")
 essays <- select(profiles, contains("essay"))
 profiles <- select(profiles, -contains("essay"))
 profiles <- mutate(profiles, is_female = ifelse(sex=="f", 1, 0))
@@ -82,13 +82,16 @@ profile.has.query <- function(data.frame, query){
 
 profiles$has_makeup <- profile.has.query(data.frame = essays, query = "makeup")
 group_by(profiles, has_makeup) %>% 
-  summarise(prop_female=mean(is_female)) %>% kable(.)
+  summarise(prop_female=mean(is_female)) %>% kable(., digits = 3)
 
 #fit model
-model_1 <- glm(is_female ~ has_makeup + num_height, data=profiles, family=binomial)
+model_1 <- glm(is_female ~ has_makeup + num_height, data=profiles, family=binomial, na.action = na.exclude)
 l <- summary(model_1)
 kable(l$coef, digits = 3)
 ```
+
+Here, I'm using analysis of heights and use of the word "makeup" to fit a model to predict gender of Bay Area OK Cupid users. The jitter plot shows the range of heights of OK Cupid users organized by gender, where 1 corresponds to female and 0 corresponds to male. The table of "has makeup" organized by True/False shows the proportion of each response that is female (e.g. 75% of those who used the word "makeup" in their profile essays were female). A logistic regresion of these variables indicates that the odds of women using "makeup" in their profile is exp(1.68) for each increase in one and the odds that a user is female is exp(-0.64) for each increase of one in height. 
+
 
 
 ### b)
@@ -109,6 +112,7 @@ ggplot(data = NULL, aes(x = p_hat)) +
 
 ```
 
+This histogram shows the fitted probability of each user's gender based on the model above. The red line represents p = 0.5, exactly in between 0 (male) and 1 (female)--users close to this line are not well predicted by the model, while users at 0 and 1 are almost certainly male or female as predicted by the model.
 
 ### c)
 
@@ -123,9 +127,43 @@ predicted sex to the actual sex of all users. The sum of all the elements in
 your table should be $n=59946$. Comment on how well our predictions fared.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+fit_pred <- c()
 
+for(i in 1:59943) {
+  if(!is.na(p_hat [i])){
+    if(p_hat[i] >= 0.5) {
+      fit_pred[i] <- 1
+    }
+    if(p_hat[i] < 0.5) {
+      fit_pred[i] <- 0
+    }
+  }else{
+    fit_pred[i] <- NA
+  }
+}
+
+profiles$pred_female <- fit_pred
+
+obs <- profiles  %>% group_by(is_female)  %>% tally()
+pred <- profiles  %>% group_by(pred_female)  %>% tally()
+
+contingency <- matrix(nrow = 4, ncol = 2)
+colnames(contingency) <- c("Actual", "Predicted")
+rownames(contingency) <- c("Male", "Female", "Unknown", "Sum")
+
+contingency[1,1] <- obs[1,2][[1]]
+contingency[2,1] <- obs[2,2][[1]]
+contingency[4,1] <- contingency[1,1] + contingency[2,1]
+
+contingency[1,2] <- pred[1,2][[1]]
+contingency[2,2] <- pred[2,2][[1]]
+contingency[3,2] <- pred[3,2][[1]]
+contingency[4,2] <- contingency[1,2] + contingency[2,2] + contingency[3,2]
+
+kable(as.data.frame(contingency))
 ```
 
+This table shows the actual versus predicted counts of males and females based on the model above. A threshold probability of 0.5 and above was used to predict female users. There are 3 users that the model failed to predict due to missing height or essay responses (or both). It is possible that the reason the counts sum to 59943 instead of 59946 is because I eliminated users that didn't report gender from being included in the model in the first place. This model does a resonably good job predicting--949 users were predicted incorrectly. Overall, 2% of males and 4% of females were assigned to incorrect genders. 
 
 ### d)
 
@@ -162,7 +200,7 @@ songs_per_week$date <- as.Date(paste(songs_per_week$year,
                                      songs_per_week$week, 1, sep="-"), "%Y-%U-%u")
 
 ggplot(data = songs_per_week, aes(x = date, y = n)) +
-  geom_point() +
+  geom_area() +
   labs(title = "Songs Played Per Week", x = "Date",
        y = "Number of Songs")
 
@@ -190,7 +228,7 @@ ggplot(data = songs_by_season, aes(x = season, y = n)) +
 #highly variable in winter due to break?
 ```
 
-
+A chart of number of songs per week from 2004-2009 shows distinct periodicity between seasons. Number of songs per week drops continuously until toward the middle of the year and then spikes back up at the end. Looking at a boxplot of seasons, we can see that the most songs per week are played in the autumn with little variability (perhaps students are excited school is starting back up). During the summer, songs per week dips to its lowest point, likely because fewer regular students are on campus. Finally, winter sees the most spread in number of songs played per week. This is most likley due to the large winter break where few songs are played juxtaposed with the end and beginning of semesters. 
 
 
 
@@ -217,7 +255,7 @@ academic_songs %>% group_by(artist) %>%
   tally() %>% arrange(desc(n)) %>% slice(1:10) %>% kable()
 ```
 
-
+This table shows the top ten artists played during the "graveyard shift" of the academic year during 2004 through 2009. It's nice to see some classics in here.
 
 
 
@@ -233,6 +271,8 @@ Let the reference currency be US dollars. Analyze these results and provide
 insight to a foreign currency exchanger.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+bitcoin <- Quandl("BAVERAGE/USD") %>% tbl_df()
+gold <- Quandl("WGC/GOLD_DAILY_USD") %>% tbl_df()
 bitcoin <- rename(bitcoin, Avg = `24h Average`, Total.Volume = `Total Volume`)
 
 currency <- left_join(bitcoin, gold, by = "Date")
@@ -244,21 +284,41 @@ ggplot(data = currency, aes(x = Date)) +
   labs(title = "Variation in Average Currency Prices", x = "Date",
        y = "Average Price for Day (USD)")
 
-bitcoin_diff <- diff(currency$Avg)
-gold_diff <- diff(currency$Value)
+bitcoin_diff <- as.data.frame(diff(currency$Avg))
+bitcoin_diff <- mutate(bitcoin_diff, Date = currency$Date[2:2076])
+bitcoin_diff <- rename(bitcoin_diff, Diff = `diff(currency$Avg)`)
 
-ggplot(data = NULL, aes(x = bitcoin_diff)) +
+gold_diff <- as.data.frame(diff(currency$Value))
+gold_diff <- mutate(gold_diff, Date = currency$Date[2:2076])
+gold_diff <- rename(gold_diff, Diff = `diff(currency$Value)`)
+
+currency_diff <- left_join(bitcoin_diff, gold_diff, by = "Date")
+currency_diff <- rename(currency_diff, bitcoin_diff = `Diff.x`, gold_diff = `Diff.y`)
+currency_diff <- currency_diff[,c(2,1,3)]
+currency_diff <- gather(currency_diff, "currency", "diff", 2:3)
+
+ggplot(data = bitcoin_diff, aes(x = Diff)) +
   geom_histogram() +
   xlim(-200,200) +
   labs(title = "Daily Variation in Bitcoin Prices", x = "Daily Difference in Price of Gold",
        y = "Frequency")
 
-ggplot(data = NULL, aes(x = gold_diff)) +
+ggplot(data = gold_diff, aes(x = Diff)) +
   geom_histogram() +
   xlim(-200,200)+
   labs(title = "Daily Variation in Gold Prices", x = "Daily Difference in Price of Gold",
        y = "Frequency")
+
+ggplot(data = currency_diff, aes(x = Date, y = diff, fill = currency)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ylim(-100,100) +
+  labs(title = "Daily Variation in Gold and Bitcoin Prices", x = "Date",
+       y = "Difference in USD Compared to Previous Day")
+
 ```
+
+Generally, gold prices are higher and have less fluctuation than bitcoin prices. According to the first graph, which shows general variation in prices, gold has a higher value in USD, but has been steadily decreasing in value since 2013 while bitcoin spiked in value right before 2014, and has varied significantly since. When daily differences are plotted on a histogram, variation in gold prices shows a more uniform distribution. However, time span is taken into account, bitcoins have more variability day to day, particularly after 2014. Gold is a more stable investment than are bitcoins, however, bitcoins holds the potential for a higher payout. 
+
 
 
 
