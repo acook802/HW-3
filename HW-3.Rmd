@@ -11,6 +11,7 @@ suppressPackageStartupMessages(library(lubridate))
 suppressPackageStartupMessages(library(Quandl))
 suppressPackageStartupMessages(library(tidyr))
 suppressPackageStartupMessages(library(knitr))
+suppressPackageStartupMessages(library(reshape))
 ```
 
 
@@ -60,6 +61,7 @@ essays <- select(profiles, contains("essay"))
 profiles <- select(profiles, -contains("essay"))
 profiles <- mutate(profiles, is_female = ifelse(sex=="f", 1, 0))
 
+
 ##from previous assignment
 
 #height and makeup!
@@ -68,7 +70,7 @@ profiles <- mutate(profiles, num_height = as.numeric(as.character(height)))
 ggplot(data=profiles, aes(x=num_height, y=is_female)) +
   geom_jitter(height=0.2, alpha = 0.1) +
   xlim(c(50, 80)) + 
-  labs(title = "Range of Heights on Bay Area OKCupid Profiles", x = "Age", y = "Is Female")
+  labs(title = "Range of Heights on Bay Area OKCupid Profiles", x = "Height", y = "Is Female")
 
 find.query <- function(char.vector, query){
   which.has.query <- grep(query, char.vector, ignore.case = TRUE)
@@ -90,7 +92,7 @@ l <- summary(model_1)
 kable(l$coef, digits = 3)
 ```
 
-Here, I'm using analysis of heights and use of the word "makeup" to fit a model to predict gender of Bay Area OK Cupid users. The jitter plot shows the range of heights of OK Cupid users organized by gender, where 1 corresponds to female and 0 corresponds to male. The table of "has makeup" organized by True/False shows the proportion of each response that is female (e.g. 75% of those who used the word "makeup" in their profile essays were female). A logistic regresion of these variables indicates that the odds of women using "makeup" in their profile is exp(1.68) for each increase in one and the odds that a user is female is exp(-0.64) for each increase of one in height. 
+Here, I'm using analysis of heights and use of the word "makeup" to fit a model to predict gender of Bay Area OK Cupid users. The jitter plot shows the range of heights of OK Cupid users organized by gender, where 1 corresponds to female and 0 corresponds to male. The table of "has makeup" organized by True/False shows the proportion of each response that is female (e.g. 75% of those who used the word "makeup" in their profile essays were female). A logistic regresion of these variables indicates that the associated multiplicative increase in the odds of being female for users who have "makeup" in their profile essays (relative to no makeup) is exp(1.68). The odds that a user is female decreases exp(-0.636) for each inch increase in height.  
 
 
 
@@ -131,26 +133,16 @@ fit_pred <- ifelse(p_hat >= 0.5, 1, 0)
 
 profiles$pred_female <- fit_pred
 
-obs <- profiles  %>% group_by(is_female)  %>% tally()
-pred <- profiles  %>% group_by(pred_female)  %>% tally()
+t_is <- as.data.frame(table(profiles$is_female))
+t_pred <- as.data.frame(table(profiles$pred_female))
 
-contingency <- matrix(nrow = 2, ncol = 2)
+contingency <- left_join(t_is, t_pred, by = "Var1") %>% select(-Var1)
 colnames(contingency) <- c("Actual", "Predicted")
 rownames(contingency) <- c("Male", "Female")
-
-contingency[1,1] <- obs[1,2][[1]]
-contingency[2,1] <- obs[2,2][[1]]
-#contingency[4,1] <- contingency[1,1] + contingency[2,1]
-
-contingency[1,2] <- pred[1,2][[1]]
-contingency[2,2] <- pred[2,2][[1]]
-#contingency[3,2] <- pred[3,2][[1]]
-#contingency[4,2] <- contingency[1,2] + contingency[2,2] + contingency[3,2]
-
-kable(as.data.frame(contingency))
+kable(contingency)
 ```
 
-This table shows the actual versus predicted counts of males and females based on the model above. A threshold probability of 0.5 and above was used to predict female users. There are 3 users that the model failed to predict due to missing height or essay responses (or both). It is possible that the reason the counts sum to 59943 instead of 59946 is because I eliminated users that didn't report gender from being included in the model in the first place. This model does a resonably good job predicting--949 users were predicted incorrectly. Overall, 2% of males and 4% of females were assigned to incorrect genders. 
+This table shows the actual versus predicted counts of males and females based on the model above. A threshold probability of 0.5 and above was used to predict female users. There are 3 users that the model failed to predict due to missing height or essay responses (or both). This model does a resonably good job predicting--949 users were predicted incorrectly. Overall, 2% of males and 4% of females were assigned to incorrect genders. 
 
 ### d)
 
@@ -260,7 +252,7 @@ insight to a foreign currency exchanger.
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 bitcoin <- Quandl("BAVERAGE/USD") %>% tbl_df()
 gold <- Quandl("WGC/GOLD_DAILY_USD") %>% tbl_df()
-bitcoin <- rename(bitcoin, Avg = `24h Average`, Total.Volume = `Total Volume`)
+bitcoin <- dplyr::rename(bitcoin, Avg = `24h Average`, Total.Volume = `Total Volume`)
 
 currency <- left_join(bitcoin, gold, by = "Date")
 
@@ -271,40 +263,45 @@ ggplot(data = currency, aes(x = Date)) +
   labs(title = "Variation in Average Currency Prices", x = "Date",
        y = "Average Price for Day (USD)")
 
-bitcoin_diff <- as.data.frame(diff(currency$Avg))
-bitcoin_diff <- mutate(bitcoin_diff, Date = currency$Date[2:2076])
-bitcoin_diff <- rename(bitcoin_diff, Diff = `diff(currency$Avg)`)
+bitcoin_diff <- c()
+for(i in 2:length(currency$Date)) {
+  bitcoin_diff[i-1] <- ((currency$Avg[i] - currency$Avg[i-1])/currency$Avg[i-1])*100
+}
 
-gold_diff <- as.data.frame(diff(currency$Value))
-gold_diff <- mutate(gold_diff, Date = currency$Date[2:2076])
-gold_diff <- rename(gold_diff, Diff = `diff(currency$Value)`)
+bitcoin_diff <- as.data.frame(bitcoin_diff)
+bitcoin_diff <- mutate(bitcoin_diff, Date = currency$Date[-1])
+
+gold_diff <- c()
+for(i in 2:length(currency$Date)) {
+  gold_diff[i-1] <- ((currency$Value[i] - currency$Value[i-1])/currency$Value[i-1])*100
+}
+
+gold_diff <- as.data.frame(gold_diff)
+gold_diff <- mutate(gold_diff, Date = currency$Date[-1])
 
 currency_diff <- left_join(bitcoin_diff, gold_diff, by = "Date")
-currency_diff <- rename(currency_diff, bitcoin_diff = `Diff.x`, gold_diff = `Diff.y`)
 currency_diff <- currency_diff[,c(2,1,3)]
 currency_diff <- gather(currency_diff, "currency", "diff", 2:3)
 
-ggplot(data = bitcoin_diff, aes(x = Diff)) +
+ggplot(data = bitcoin_diff, aes(x = bitcoin_diff)) +
   geom_histogram() +
-  xlim(-200,200) +
   labs(title = "Daily Variation in Bitcoin Prices", x = "Daily Difference in Price of Gold",
        y = "Frequency")
 
-ggplot(data = gold_diff, aes(x = Diff)) +
+ggplot(data = gold_diff, aes(x = gold_diff)) +
   geom_histogram() +
-  xlim(-200,200)+
   labs(title = "Daily Variation in Gold Prices", x = "Daily Difference in Price of Gold",
        y = "Frequency")
 
 ggplot(data = currency_diff, aes(x = Date, y = diff, fill = currency)) +
   geom_bar(stat = "identity", position = "dodge") +
-  ylim(-100,100) +
   labs(title = "Daily Variation in Gold and Bitcoin Prices", x = "Date",
-       y = "Difference in USD Compared to Previous Day")
+       y = "Relative Change (per day)") +
+  scale_fill_discrete(name = "Currency", labels = c("Bitcoin", "Gold"))
 
 ```
 
-Generally, gold prices are higher and have less fluctuation than bitcoin prices. According to the first graph, which shows general variation in prices, gold has a higher value in USD, but has been steadily decreasing in value since 2013 while bitcoin spiked in value right before 2014, and has varied significantly since. When daily differences are plotted on a histogram, variation in gold prices shows a more uniform distribution. However, time span is taken into account, bitcoins have more variability day to day, particularly after 2014. Gold is a more stable investment than are bitcoins, however, bitcoins holds the potential for a higher payout. 
+Generally, gold prices are higher and have less fluctuation than bitcoin prices. According to the first graph, which shows general variation in prices, gold has a higher value in USD, but has been steadily decreasing in value since 2013 while bitcoin spiked in value right before 2014, and has varied significantly since. When daily differences are plotted on a histogram, variation in gold prices shows a more uniform and much smaller distribution. When time span is taken into account, bitcoins have more variability day to day, particularly after 2014. Gold is a more stable investment than are bitcoins, however, bitcoins hold the potential for a higher payout. 
 
 
 
@@ -324,5 +321,16 @@ cheese <- Quandl("USDANASS/NASS_CHEESEPRODUCTIONMEASUREDINLB") %>%
   tbl_df()
 milk <-  Quandl("USDANASS/NASS_MILKPRODUCTIONMEASUREDINLB") %>% 
   tbl_df()
+
+cheese <- dplyr::rename(cheese, Cheese = `Value`)
+milk <- dplyr::rename(milk, Milk = `Value`)
+dairy <- inner_join(milk, cheese, by = "Date")
+dairy <- gather(dairy, "Type", "Weight", 2:3)
+
+ggplot(data = dairy, aes(x = Date, y = Weight, colour = Type)) +
+  geom_line() +
+  labs(title = "Milk and Cheese Production in the US", y = "Weight (lbs)") +
+  scale_color_discrete(name = "")
 ```
 
+Milk production has been reliably several orders of magnitude above cheese production since 1931. Both milk and cheese production show steady increases in production after 1980--this may be due to an increasingly globalized market and ease of fast shipping. Milk production has increased far more rapidly than cheese production over this time period. 
